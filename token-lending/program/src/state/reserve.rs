@@ -616,14 +616,14 @@ pub struct ReserveConfig {
 /// repayments and liquidations.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ReserveFees {
-    /// Fee assessed on `BorrowObligationLiquidity`, expressed as a Wad.
+    /// Fee assessed on borrow, expressed as a Wad.
     /// Must be between 0 and 10^18, such that 10^18 = 1.  A few examples for
     /// clarity:
     /// 1% = 10_000_000_000_000_000
     /// 0.01% (1 basis point) = 100_000_000_000_000
     /// 0.00001% (Aave borrow fee) = 100_000_000_000
     pub borrow_fee_wad: u64,
-    /// Amount of fee going to host account, if provided in liquidate and repay
+    /// Amount of fee going to host account
     pub host_fee_percentage: u8,
 }
 
