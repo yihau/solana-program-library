@@ -22,6 +22,7 @@ use {
     },
     spl_token_lending::{
         self,
+        instruction::{init_lending_market, init_reserve},
         state::{LendingMarket, Reserve, ReserveConfig, ReserveFees},
     },
     std::{borrow::Borrow, process::exit},
@@ -87,7 +88,7 @@ fn command_create_lending_market(
     let mut transaction = Transaction::new_with_payer(
         &[
             // Account for the lending market
-            system_instruction::create_account(
+            create_account(
                 &config.payer.pubkey(),
                 &lending_market_keypair.pubkey(),
                 lending_market_balance,
@@ -95,7 +96,7 @@ fn command_create_lending_market(
                 &spl_token_lending::id(),
             ),
             // Initialize lending market account
-            spl_token_lending::instruction::init_lending_market(
+            init_lending_market(
                 spl_token_lending::id(),
                 lending_market_keypair.pubkey(),
                 lending_market_owner,
@@ -264,7 +265,7 @@ fn command_add_reserve(
                 &spl_token::id(),
             ),
             // Initialize reserve accounts
-            spl_token_lending::instruction::init_reserve(
+            init_reserve(
                 spl_token_lending::id(),
                 liquidity_amount,
                 reserve_config,
@@ -309,8 +310,6 @@ fn command_add_reserve(
     send_transaction(&config, transaction)?;
     Ok(())
 }
-
-const USDC_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
 fn main() {
     solana_logger::setup_with_default("solana=info");
@@ -373,8 +372,7 @@ fn main() {
                 .about("Create a new lending market")
                 .arg(
                     Arg::with_name("lending_market_owner")
-                        .long("lending-market-owner")
-                        .short("owner")
+                        .long("owner")
                         .validator(is_pubkey)
                         .value_name("PUBKEY")
                         .takes_value(true)
@@ -383,13 +381,11 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("quote_token_mint")
-                        .long("quote-token-mint")
-                        .short("quote")
+                        .long("quote")
                         .validator(is_pubkey)
                         .value_name("PUBKEY")
                         .takes_value(true)
                         .required(true)
-                        .default_value(USDC_MINT)
                         .help("SPL Token mint that reserve currency prices are quoted against"),
                 ),
         )
@@ -398,8 +394,7 @@ fn main() {
                 .about("Add a reserve to a lending market")
                 .arg(
                     Arg::with_name("lending_market")
-                        .long("lending-market")
-                        .short("market")
+                        .long("market")
                         .validator(is_pubkey)
                         .value_name("PUBKEY")
                         .takes_value(true)
@@ -408,8 +403,7 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("source_liquidity")
-                        .long("source-liquidity")
-                        .short("source")
+                        .long("source")
                         .validator(is_pubkey)
                         .value_name("PUBKEY")
                         .takes_value(true)
@@ -418,8 +412,7 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("liquidity_oracle")
-                        .long("liquidity-oracle")
-                        .short("oracle")
+                        .long("oracle")
                         .validator(is_pubkey)
                         .value_name("PUBKEY")
                         .takes_value(true)
@@ -437,7 +430,6 @@ fn main() {
                 .arg(
                     Arg::with_name("optimal_utilization_rate")
                         .long("optimal-utilization-rate")
-                        .short("util")
                         .validator(is_parsable::<u8>)
                         .value_name("PERCENT")
                         .takes_value(true)
@@ -448,7 +440,6 @@ fn main() {
                 .arg(
                     Arg::with_name("loan_to_value_ratio")
                         .long("loan-to-value-ratio")
-                        .short("ltv")
                         .validator(is_parsable::<u8>)
                         .value_name("PERCENT")
                         .takes_value(true)
@@ -459,7 +450,6 @@ fn main() {
                 .arg(
                     Arg::with_name("liquidation_bonus")
                         .long("liquidation-bonus")
-                        .short("bonus")
                         .validator(is_parsable::<u8>)
                         .value_name("PERCENT")
                         .takes_value(true)
@@ -470,7 +460,6 @@ fn main() {
                 .arg(
                     Arg::with_name("liquidation_threshold")
                         .long("liquidation-threshold")
-                        .short("thresh")
                         .validator(is_parsable::<u8>)
                         .value_name("PERCENT")
                         .takes_value(true)
@@ -481,7 +470,6 @@ fn main() {
                 .arg(
                     Arg::with_name("min_borrow_rate")
                         .long("min-borrow-rate")
-                        .short("min")
                         .validator(is_parsable::<u8>)
                         .value_name("PERCENT")
                         .takes_value(true)
@@ -492,7 +480,6 @@ fn main() {
                 .arg(
                     Arg::with_name("optimal_borrow_rate")
                         .long("optimal-borrow-rate")
-                        .short("opt")
                         .validator(is_parsable::<u8>)
                         .value_name("PERCENT")
                         .takes_value(true)
@@ -503,7 +490,6 @@ fn main() {
                 .arg(
                     Arg::with_name("max_borrow_rate")
                         .long("max-borrow-rate")
-                        .short("max")
                         .validator(is_parsable::<u8>)
                         .value_name("PERCENT")
                         .takes_value(true)
@@ -514,7 +500,6 @@ fn main() {
                 .arg(
                     Arg::with_name("borrow_fee_wad")
                         .long("borrow-fee-wad")
-                        .short("fee")
                         .validator(is_parsable::<u64>)
                         .value_name("WAD")
                         .takes_value(true)
@@ -525,7 +510,6 @@ fn main() {
                 .arg(
                     Arg::with_name("host_fee_percentage")
                         .long("host-fee-percentage")
-                        .short("host")
                         .validator(is_parsable::<u8>)
                         .value_name("PERCENT")
                         .takes_value(true)
