@@ -12,5 +12,4 @@ pub mod state;
 // Export current sdk types for downstream users building with a different sdk version
 pub use solana_program;
 
-// @FIXME: TokenLending1111111111111111111111111111111
-solana_program::declare_id!("HFXKw9tpZ1EhXs2taJCh1KXcjetmSRaKrivdaLcfNMh2");
+solana_program::declare_id!("TokenLending11111111111111111111111111111111");
