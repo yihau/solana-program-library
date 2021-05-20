@@ -22,12 +22,14 @@ pub enum LendingInstruction {
     /// Accounts expected by this instruction:
     ///
     ///   0. `[writable]` Lending market account - uninitialized.
-    ///   1. `[]` Quote currency SPL Token mint.
-    ///   2. `[]` Rent sysvar.
-    ///   3. `[]` Token program id.
+    ///   1. `[]` Rent sysvar.
+    ///   2. `[]` Token program id.
     InitLendingMarket {
         /// Owner authority which can add new reserves
         owner: Pubkey,
+        /// Currency market prices are quoted in
+        /// e.g. "USD" null padded (`*b"USD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"`) or a SPL token mint pubkey
+        quote_currency: [u8; 32],
     },
 
     // 1
@@ -54,19 +56,18 @@ pub enum LendingInstruction {
     ///   3. `[]` Reserve liquidity SPL Token mint.
     ///   4. `[writable]` Reserve liquidity supply SPL Token account - uninitialized.
     ///   5. `[writable]` Reserve liquidity fee receiver - uninitialized.
-    ///   6. `[writable]` Reserve collateral SPL Token mint - uninitialized.
-    ///   7. `[writable]` Reserve collateral token supply - uninitialized.
-    ///   8. `[]` Quote currency SPL Token mint.
-    ///   9. `[]` Lending market account.
-    ///   10 `[]` Derived lending market authority.
-    ///   11 `[signer]` Lending market owner.
-    ///   12 `[signer]` User transfer authority ($authority).
-    ///   13 `[]` Clock sysvar.
-    ///   13 `[]` Rent sysvar.
-    ///   14 `[]` Token program id.
-    ///   15 `[optional]` Reserve liquidity oracle account.
-    ///                     Not required for quote currency reserves.
-    ///                     Must match base and quote currency mint, and quote currency decimals.
+    ///   6. `[]` Pyth product account.
+    ///   7. `[]` Pyth price account.
+    ///             This will be used as the reserve liquidity oracle account.
+    ///   8. `[writable]` Reserve collateral SPL Token mint - uninitialized.
+    ///   9. `[writable]` Reserve collateral token supply - uninitialized.
+    ///   10 `[]` Lending market account.
+    ///   11 `[]` Derived lending market authority.
+    ///   12 `[signer]` Lending market owner.
+    ///   13 `[signer]` User transfer authority ($authority).
+    ///   14 `[]` Clock sysvar.
+    ///   15 `[]` Rent sysvar.
+    ///   16 `[]` Token program id.
     InitReserve {
         /// Initial amount of liquidity to deposit into the new reserve
         liquidity_amount: u64,
@@ -81,9 +82,8 @@ pub enum LendingInstruction {
     ///
     ///   0. `[writable]` Reserve account.
     ///   1. `[]` Clock sysvar.
-    ///   2. `[optional]` Reserve liquidity oracle account.
-    ///                     Required if the reserve currency is not the lending market quote
-    ///                     currency.
+    ///   2. `[]` Reserve liquidity oracle account.
+    ///             Must be the Pyth price account specified at InitReserve.
     RefreshReserve,
 
     // 4
@@ -269,6 +269,47 @@ pub enum LendingInstruction {
         /// Amount of liquidity to repay - u64::MAX for up to 100% of borrowed amount
         liquidity_amount: u64,
     },
+
+    // 13
+    /// Make a flash loan.
+    ///
+    /// Accounts expected by this instruction:
+    ///
+    ///   0. `[writable]` Source liquidity token account.
+    ///                     Minted by reserve liquidity mint.
+    ///                     Must match the reserve liquidity supply.
+    ///   1. `[writable]` Destination liquidity token account.
+    ///                     Minted by reserve liquidity mint.
+    ///   2. `[writable]` Reserve account.
+    ///   3. `[]` Lending market account.
+    ///   4. `[]` Derived lending market authority.
+    ///   5. `[]` Flash loan receiver program account.
+    ///             Must implement an instruction that has tag of 0 and a signature of `(repay_amount: u64)`
+    ///             This instruction must return the amount to the source liquidity account.
+    ///   6. `[]` Token program id.
+    ///   7. `[writable]` Flash loan fee receiver account.
+    ///                     Must match the reserve liquidity fee receiver.
+    ///   8. `[writable]` Host fee receiver.
+    ///   .. `[any]` Additional accounts expected by the receiving program's `ReceiveFlashLoan` instruction.
+    ///
+    ///   The flash loan receiver program that is to be invoked should contain an instruction with
+    ///   tag `0` and accept the total amount (including fee) that needs to be returned back after
+    ///   its execution has completed.
+    ///
+    ///   Flash loan receiver should have an instruction with the following signature:
+    ///
+    ///   0. `[writable]` Source liquidity (matching the destination from above).
+    ///   1. `[writable]` Destination liquidity (matching the source from above).
+    ///   2. `[]` Token program id
+    ///   .. `[any]` Additional accounts provided to the lending program's `FlashLoan` instruction above.
+    ///   ReceiveFlashLoan {
+    ///       // Amount that is loaned to the receiver program
+    ///       amount: u64
+    ///   }
+    FlashLoan {
+        /// The amount that is to be borrowed - u64::MAX for up to 100% of available liquidity
+        amount: u64,
+    },
 }
 
 impl LendingInstruction {
@@ -279,8 +320,12 @@ impl LendingInstruction {
             .ok_or(LendingError::InstructionUnpackError)?;
         Ok(match tag {
             0 => {
-                let (owner, _rest) = Self::unpack_pubkey(rest)?;
-                Self::InitLendingMarket { owner }
+                let (owner, rest) = Self::unpack_pubkey(rest)?;
+                let (quote_currency, _rest) = Self::unpack_bytes32(rest)?;
+                Self::InitLendingMarket {
+                    owner,
+                    quote_currency: *quote_currency,
+                }
             }
             1 => {
                 let (new_owner, _rest) = Self::unpack_pubkey(rest)?;
@@ -296,6 +341,7 @@ impl LendingInstruction {
                 let (optimal_borrow_rate, rest) = Self::unpack_u8(rest)?;
                 let (max_borrow_rate, rest) = Self::unpack_u8(rest)?;
                 let (borrow_fee_wad, rest) = Self::unpack_u64(rest)?;
+                let (flash_loan_fee_wad, rest) = Self::unpack_u64(rest)?;
                 let (host_fee_percentage, _rest) = Self::unpack_u8(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
@@ -309,6 +355,7 @@ impl LendingInstruction {
                         max_borrow_rate,
                         fees: ReserveFees {
                             borrow_fee_wad,
+                            flash_loan_fee_wad,
                             host_fee_percentage,
                         },
                     },
@@ -345,6 +392,10 @@ impl LendingInstruction {
                 let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::LiquidateObligation { liquidity_amount }
             }
+            13 => {
+                let (amount, _rest) = Self::unpack_u64(rest)?;
+                Self::FlashLoan { amount }
+            }
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -357,13 +408,13 @@ impl LendingInstruction {
             msg!("u64 cannot be unpacked");
             return Err(LendingError::InstructionUnpackError.into());
         }
-        let (amount, rest) = input.split_at(8);
-        let amount = amount
+        let (bytes, rest) = input.split_at(8);
+        let value = bytes
             .get(..8)
             .and_then(|slice| slice.try_into().ok())
             .map(u64::from_le_bytes)
             .ok_or(LendingError::InstructionUnpackError)?;
-        Ok((amount, rest))
+        Ok((value, rest))
     }
 
     fn unpack_u8(input: &[u8]) -> Result<(u8, &[u8]), ProgramError> {
@@ -371,13 +422,27 @@ impl LendingInstruction {
             msg!("u8 cannot be unpacked");
             return Err(LendingError::InstructionUnpackError.into());
         }
-        let (amount, rest) = input.split_at(1);
-        let amount = amount
+        let (bytes, rest) = input.split_at(1);
+        let value = bytes
             .get(..1)
             .and_then(|slice| slice.try_into().ok())
             .map(u8::from_le_bytes)
             .ok_or(LendingError::InstructionUnpackError)?;
-        Ok((amount, rest))
+        Ok((value, rest))
+    }
+
+    fn unpack_bytes32(input: &[u8]) -> Result<(&[u8; 32], &[u8]), ProgramError> {
+        if input.len() < 32 {
+            msg!("32 bytes cannot be unpacked");
+            return Err(LendingError::InstructionUnpackError.into());
+        }
+        let (bytes, rest) = input.split_at(32);
+        Ok((
+            bytes
+                .try_into()
+                .map_err(|_| LendingError::InstructionUnpackError)?,
+            rest,
+        ))
     }
 
     fn unpack_pubkey(input: &[u8]) -> Result<(Pubkey, &[u8]), ProgramError> {
@@ -394,9 +459,13 @@ impl LendingInstruction {
     pub fn pack(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(size_of::<Self>());
         match *self {
-            Self::InitLendingMarket { owner } => {
+            Self::InitLendingMarket {
+                owner,
+                quote_currency,
+            } => {
                 buf.push(0);
                 buf.extend_from_slice(owner.as_ref());
+                buf.extend_from_slice(quote_currency.as_ref());
             }
             Self::SetLendingMarketOwner { new_owner } => {
                 buf.push(1);
@@ -416,6 +485,7 @@ impl LendingInstruction {
                         fees:
                             ReserveFees {
                                 borrow_fee_wad,
+                                flash_loan_fee_wad,
                                 host_fee_percentage,
                             },
                     },
@@ -430,6 +500,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&optimal_borrow_rate.to_le_bytes());
                 buf.extend_from_slice(&max_borrow_rate.to_le_bytes());
                 buf.extend_from_slice(&borrow_fee_wad.to_le_bytes());
+                buf.extend_from_slice(&flash_loan_fee_wad.to_le_bytes());
                 buf.extend_from_slice(&host_fee_percentage.to_le_bytes());
             }
             Self::RefreshReserve => {
@@ -469,6 +540,10 @@ impl LendingInstruction {
                 buf.push(12);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
+            Self::FlashLoan { amount } => {
+                buf.push(13);
+                buf.extend_from_slice(&amount.to_le_bytes());
+            }
         }
         buf
     }
@@ -479,18 +554,18 @@ pub fn init_lending_market(
     program_id: Pubkey,
     lending_market_pubkey: Pubkey,
     lending_market_owner: Pubkey,
-    quote_token_mint: Pubkey,
+    quote_currency: [u8; 32],
 ) -> Instruction {
     Instruction {
         program_id,
         accounts: vec![
             AccountMeta::new(lending_market_pubkey, false),
-            AccountMeta::new_readonly(quote_token_mint, false),
             AccountMeta::new_readonly(sysvar::rent::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: LendingInstruction::InitLendingMarket {
             owner: lending_market_owner,
+            quote_currency,
         }
         .pack(),
     }
@@ -527,17 +602,17 @@ pub fn init_reserve(
     reserve_liquidity_fee_receiver_pubkey: Pubkey,
     reserve_collateral_mint_pubkey: Pubkey,
     reserve_collateral_supply_pubkey: Pubkey,
-    quote_token_mint_pubkey: Pubkey,
+    pyth_product_pubkey: Pubkey,
+    pyth_price_pubkey: Pubkey,
     lending_market_pubkey: Pubkey,
     lending_market_owner_pubkey: Pubkey,
     user_transfer_authority_pubkey: Pubkey,
-    reserve_liquidity_oracle_pubkey: Option<Pubkey>,
 ) -> Instruction {
     let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
         &program_id,
     );
-    let mut accounts = vec![
+    let accounts = vec![
         AccountMeta::new(source_liquidity_pubkey, false),
         AccountMeta::new(destination_collateral_pubkey, false),
         AccountMeta::new(reserve_pubkey, false),
@@ -546,7 +621,8 @@ pub fn init_reserve(
         AccountMeta::new(reserve_liquidity_fee_receiver_pubkey, false),
         AccountMeta::new(reserve_collateral_mint_pubkey, false),
         AccountMeta::new(reserve_collateral_supply_pubkey, false),
-        AccountMeta::new_readonly(quote_token_mint_pubkey, false),
+        AccountMeta::new_readonly(pyth_product_pubkey, false),
+        AccountMeta::new_readonly(pyth_price_pubkey, false),
         AccountMeta::new_readonly(lending_market_pubkey, false),
         AccountMeta::new_readonly(lending_market_authority_pubkey, false),
         AccountMeta::new_readonly(lending_market_owner_pubkey, true),
@@ -555,12 +631,6 @@ pub fn init_reserve(
         AccountMeta::new_readonly(sysvar::rent::id(), false),
         AccountMeta::new_readonly(spl_token::id(), false),
     ];
-    if let Some(reserve_liquidity_oracle_pubkey) = reserve_liquidity_oracle_pubkey {
-        accounts.push(AccountMeta::new_readonly(
-            reserve_liquidity_oracle_pubkey,
-            false,
-        ));
-    }
     Instruction {
         program_id,
         accounts,
@@ -576,18 +646,13 @@ pub fn init_reserve(
 pub fn refresh_reserve(
     program_id: Pubkey,
     reserve_pubkey: Pubkey,
-    reserve_liquidity_oracle_pubkey: Option<Pubkey>,
+    reserve_liquidity_oracle_pubkey: Pubkey,
 ) -> Instruction {
-    let mut accounts = vec![
+    let accounts = vec![
         AccountMeta::new(reserve_pubkey, false),
+        AccountMeta::new_readonly(reserve_liquidity_oracle_pubkey, false),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
-    if let Some(reserve_liquidity_oracle_pubkey) = reserve_liquidity_oracle_pubkey {
-        accounts.push(AccountMeta::new_readonly(
-            reserve_liquidity_oracle_pubkey,
-            false,
-        ));
-    }
     Instruction {
         program_id,
         accounts,
@@ -882,5 +947,39 @@ pub fn liquidate_obligation(
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: LendingInstruction::LiquidateObligation { liquidity_amount }.pack(),
+    }
+}
+
+/// Creates a `FlashLoan` instruction.
+#[allow(clippy::too_many_arguments)]
+pub fn flash_loan(
+    program_id: Pubkey,
+    amount: u64,
+    reserve_liquidity_pubkey: Pubkey,
+    destination_liquidity_pubkey: Pubkey,
+    reserve_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+    derived_lending_market_authority_pubkey: Pubkey,
+    flash_loan_receiver_pubkey: Pubkey,
+    flash_loan_fee_receiver_pubkey: Pubkey,
+    host_fee_receiver_pubkey: Pubkey,
+    flash_loan_receiver_program_account_meta: Vec<AccountMeta>,
+) -> Instruction {
+    let mut accounts = vec![
+        AccountMeta::new(reserve_liquidity_pubkey, false),
+        AccountMeta::new(destination_liquidity_pubkey, false),
+        AccountMeta::new_readonly(reserve_pubkey, false),
+        AccountMeta::new_readonly(lending_market_pubkey, false),
+        AccountMeta::new_readonly(derived_lending_market_authority_pubkey, false),
+        AccountMeta::new_readonly(flash_loan_receiver_pubkey, false),
+        AccountMeta::new(flash_loan_fee_receiver_pubkey, false),
+        AccountMeta::new(host_fee_receiver_pubkey, false),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+    accounts.extend(flash_loan_receiver_program_account_meta);
+    Instruction {
+        program_id,
+        accounts,
+        data: LendingInstruction::FlashLoan { amount }.pack(),
     }
 }
