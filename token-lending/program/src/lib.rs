@@ -13,4 +13,4 @@ pub mod state;
 pub use solana_program;
 
 // @FIXME: TokenLending1111111111111111111111111111111
-solana_program::declare_id!("AxmB7MwKEhcnkw2gXXvPDaLVafKfVJguvq4iGReYEMCW");
+solana_program::declare_id!("HFXKw9tpZ1EhXs2taJCh1KXcjetmSRaKrivdaLcfNMh2");
