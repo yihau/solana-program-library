@@ -79,14 +79,6 @@ See https://spl.solana.com/token-lending for more details
    ```
    You'll use this for transaction fees, rent for your program and related accounts, and initial reserve liquidity.
 
-1. Wrap some of your SOL as an SPL Token:
-   ```shell
-   > solana wrap 2
-   
-   Wrapping 2 SOL into CLJwbKePBbuw5zEnhjjnCNoPdB7T33i9Vi1fPNxvqJkU
-   ```
-   Note the SPL Token account pubkey (e.g. `CLJwbKePBbuw5zEnhjjnCNoPdB7T33i9Vi1fPNxvqJkU`).
-
 1. Deploy the program:
    ```shell
    > solana program deploy --program-id lending.json target/deploy/spl_token_lending.so
@@ -99,7 +91,7 @@ See https://spl.solana.com/token-lending for more details
    BFa2aEPaqnMmqWeo1cBZYCaj9urU111r3UaYLRGrjJzs
    ```
 
-1. Create a lending market (relace the owner pubkey here with your own from the last step):
+1. Create a lending market, using the pubkey from the previous step as the `owner`:
    ```shell
    > target/debug/spl-token-lending create-market \
          --owner BFa2aEPaqnMmqWeo1cBZYCaj9urU111r3UaYLRGrjJzs
@@ -109,11 +101,19 @@ See https://spl.solana.com/token-lending for more details
    ```
    Note the lending market pubkey (e.g. `9X3NxthBgMkiJphbyrXbRRGPAFuKbiLYf78PnRhwekNP`).
 
-   Run `spl-token-lending create-market --help` for more details and options.
+   Run `target/debug/spl-token-lending create-market --help` for more details and options.
 
-1. Add a SOL reserve to your market:
+1. Wrap some of your SOL as an SPL Token:
    ```shell
-   > spl-token-lending add-reserve \
+   > target/debug/spl-token wrap 2
+
+   Wrapping 2 SOL into CLJwbKePBbuw5zEnhjjnCNoPdB7T33i9Vi1fPNxvqJkU
+   ```
+   Note the SPL Token account pubkey (e.g. `CLJwbKePBbuw5zEnhjjnCNoPdB7T33i9Vi1fPNxvqJkU`).
+
+1. Add a SOL reserve to your market, using the pubkey from the previous step as the `source`:
+   ```shell
+   > target/debug/spl-token-lending add-reserve \
          --market 9X3NxthBgMkiJphbyrXbRRGPAFuKbiLYf78PnRhwekNP \
          --source CLJwbKePBbuw5zEnhjjnCNoPdB7T33i9Vi1fPNxvqJkU \
          --amount 1000000000 \
@@ -126,4 +126,4 @@ See https://spl.solana.com/token-lending for more details
     - `--pyth-product` and `--pyth-price` are SOL/USD oracle
       accounts [provided by Pyth](https://github.com/pyth-network).
 
-   Run `spl-token-lending add-reserve --help` for more details and options.
+   Run `target/debug/spl-token-lending add-reserve --help` for more details and options.
