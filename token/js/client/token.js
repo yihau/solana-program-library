@@ -821,7 +821,7 @@ export class Token {
    *
    * @param multisig Public key of the account
    */
-  async getMultisigInfo(multisig: PublicKey): Promise<MultisigInfo> {
+  static async getMultisigInfo(multisig: PublicKey): Promise<MultisigInfo> {
     const info = await this.connection.getAccountInfo(multisig);
     if (info === null) {
       throw new Error('Failed to find multisig');
