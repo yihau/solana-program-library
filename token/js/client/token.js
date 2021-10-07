@@ -722,8 +722,8 @@ export class Token {
   /**
    * Retrieve mint information
    */
-  async getMintInfo(): Promise<MintInfo> {
-    const info = await this.connection.getAccountInfo(this.publicKey);
+  static async getMintInfo(mint?: PublicKey): Promise<MintInfo> {
+    const info = await this.connection.getAccountInfo(mint || this.publicKey);
     if (info === null) {
       throw new Error('Failed to find mint account');
     }
