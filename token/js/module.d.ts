@@ -110,7 +110,7 @@ declare module '@solana/spl-token' {
     ): Promise<PublicKey>;
     createMultisig(m: number, signers: Array<PublicKey>): Promise<PublicKey>;
     getMintInfo(): Promise<MintInfo>;
-    getAccountInfo(account: PublicKey): Promise<AccountInfo>;
+    static getAccountInfo(account: PublicKey): Promise<AccountInfo>;
     getOrCreateAssociatedAccountInfo(owner: PublicKey): Promise<AccountInfo>;
     getMultisigInfo(multisig: PublicKey): Promise<MultisigInfo>;
     transfer(

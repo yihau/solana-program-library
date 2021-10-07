@@ -759,7 +759,7 @@ export class Token {
    *
    * @param account Public key of the account
    */
-  async getAccountInfo(
+  static async getAccountInfo(
     account: PublicKey,
     commitment?: Commitment,
   ): Promise<AccountInfo> {
