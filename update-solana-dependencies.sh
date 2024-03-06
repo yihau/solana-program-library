@@ -17,7 +17,7 @@ sed -i'' -e "s#solana_version=v.*#solana_version=v${solana_ver}#" ./ci/solana-ve
 sed -i'' -e "s#solana_version = \".*\"#solana_version = \"${solana_ver}\"#" ./Anchor.toml
 
 declare tomls=()
-while IFS='' read -r line; do tomls+=("$line"); done < <(find . -name Cargo.toml)
+while IFS='' read -r line; do tomls+=("$line"); done < <(find . -mindepth 2 -name 'Cargo.toml')
 
 crates=(
   solana-account-decoder
@@ -84,6 +84,6 @@ crates=(
 
 set -x
 for crate in "${crates[@]}"; do
-  sed -E -i'' -e "s:(${crate} = \")([=<>]*)${old_solana_ver}([^\"]*)\".*:\1\2${solana_ver}\3\":" "${tomls[@]}"
-  sed -E -i'' -e "s:(${crate} = \{ version = \")([=<>]*)${old_solana_ver}([^\"]*)(\".*):\1\2${solana_ver}\3\4:" "${tomls[@]}"
+  sed -i "s|${crate} = \".*|${crate} = \"=${solana_ver}\"|g" "${tomls[@]}"
+  sed -i "s|${crate} = { version = \"[0-9\.<=>,]*\"\(.*\)|${crate} = { version = \"=${solana_ver}\"\1|g" "${tomls[@]}"
 done
